@@ -17,7 +17,7 @@ CC-PINN introduces a novel physically-informed learning framework to solve highl
 ## Implemented Algorithms
 
 To ensure a fair and comprehensive comparison, this repository includes the implementation of four algorithms within a unified testing framework:
-* **CC-PINN:** The proposed Cross-Correlated PINN.
+* **CC-PINN:** The proposed Cross-Correlated PINN EM inversion algorithm.
 * **Data+State-PINN:** Conventional PINN relying solely on independent data and state equation residuals.
 * **ES-PINN (Exact-Solver PINN):** A strictly physics-constrained PINN that performs explicit matrix inversion at each step.
 * **CC-CSI:** The classical Cross-Correlated Contrast Source Inversion (traditional iterative optimization method).
