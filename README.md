@@ -5,7 +5,7 @@
 
 This repository contains the official PyTorch implementation of the paper **"Beyond Data-Physics Consistency: A Cross-Correlated Physics-Informed Neural Network for Robust Inverse Scattering"**.
 
-CC-PINN introduces a novel physically-informed learning framework to solve highly nonlinear and ill-posed Electromagnetic Inverse Scattering Problems (ISPs). By bridging the gap between data-physics consistency and contrast source inversion, CC-PINN achieves state-of-the-art reconstruction accuracy and remarkable robustness on high-contrast and lossy dielectric targets.
+CC-PINN introduces a novel physically-informed learning framework to solve highly nonlinear and ill-posed Electromagnetic Inverse Scattering Problems (ISPs). By bridging the gap between data-physics consistency and contrast source inversion, CC-PINN achieves state-of-the-art reconstruction accuracy and enhanced robustness on high-contrast and lossy dielectric targets.
 
 ## Key Innovations
 
@@ -16,7 +16,7 @@ CC-PINN introduces a novel physically-informed learning framework to solve highl
 ## Implemented Algorithms
 
 To ensure a fair and comprehensive comparison, this repository includes the implementation of four algorithms within a unified testing framework:
-* **CC-PINN (Ours):** The proposed Cross-Correlated PINN.
+* **CC-PINN:** The proposed Cross-Correlated PINN.
 * **Data+State-PINN:** Conventional PINN relying solely on independent data and state equation residuals.
 * **ES-PINN (Exact-Solver PINN):** A strictly physics-constrained PINN that performs explicit matrix inversion at each step.
 * **CC-CSI:** The classical Cross-Correlated Contrast Source Inversion (traditional iterative optimization method).
