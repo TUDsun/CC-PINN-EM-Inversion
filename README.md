@@ -11,8 +11,10 @@ CC-PINN introduces a novel physically-informed learning framework to solve highl
 ## Key Innovations
 
 1. **Cross-Correlated Physics Loss:** Breaks the traditional decoupling between contrast source and permittivity optimization, guiding the network away from severe local minima.
-2. **Zero-Padding 2D-FFT Acceleration:** Converts dense matrix-vector multiplications of the Volume Integral Equation (VIE) into spatial linear convolutions, reducing the computational complexity of the Green's function integration from $\mathcal{O}(N^4)$ to $\mathcal{O}(N^2\log N)$.
-3. **Weight-Normalized Fourier Feature MLP:** Effectively overcomes the "spectral bias" of standard MLPs, enabling the network to capture high-frequency physical boundaries and local high-contrast jumps with extreme stability.
+2. **Weight-Normalized Fourier Feature MLP:** Effectively overcomes the "spectral bias" of standard MLPs, enabling the network to capture high-frequency physical boundaries and local high-contrast jumps with extreme stability.
+
+## Features
+1. **Zero-Padding 2D-FFT Acceleration:** Converts dense matrix-vector multiplications of the Volume Integral Equation (VIE) into spatial linear convolutions, reducing the computational complexity of the Green's function integration from $\mathcal{O}(N^4)$ to $\mathcal{O}(N^2\log N)$.
 
 ## Implemented Algorithms
 
