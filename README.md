@@ -24,6 +24,9 @@ To ensure a fair and comprehensive comparison, this repository includes the impl
 * **ES-PINN (Exact-Solver PINN):** A strictly physics-constrained PINN that performs explicit matrix inversion at each step.
 * **CC-CSI:** The classical Cross-Correlated Contrast Source Inversion (traditional iterative optimization method).
 
+**Supplementary Script for Baseline Selection:**
+* `CC-CSI_CSI_DBIM-Time-PSNR_autoRun.py`: A standalone evaluation script comparing the reconstruction accuracy (PSNR) and computational time among **CC-CSI, conventional CSI, and DBIM**. The empirical results explicitly demonstrate the superiority of CC-CSI, rigorously justifying its selection as the representative traditional mathematical baseline in our manuscript.
+
 ## Datasets Evaluated
 The code natively supports automated robustness testing on various datasets:
 * **Synthetic Data:** "Austria" profile and "Bowtie-Cross" targets (varying relative permittivity $\varepsilon_r \in [4, 7]$, lossy media, and different noise levels: 20dB, 10dB, 0dB SNR).
