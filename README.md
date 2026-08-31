@@ -25,7 +25,7 @@ To ensure a fair and comprehensive comparison, this repository includes the impl
 * **CC-CSI:** The classical Cross-Correlated Contrast Source Inversion (traditional iterative optimization method).
 
 **Supplementary Script for Baseline Selection:**
-* `CC-CSI_CSI_DBIM-Time-PSNR_autoRun.py`: A standalone evaluation script comparing the reconstruction accuracy (PSNR) and computational time among **CC-CSI, conventional CSI, and DBIM**. The empirical results explicitly demonstrate the superiority of CC-CSI, rigorously justifying its selection as the representative traditional mathematical baseline in our manuscript.
+* `CC-CSI_CSI_DBIM-Time-PSNR_autoRun.py`: A standalone evaluation script comparing the reconstruction accuracy (PSNR) and computational time among **CC-CSI, conventional CSI, and DBIM**. The empirical results explicitly demonstrate the superiority of CC-CSI, rigorously justifying its selection as the representative traditional deterministic inversion baseline in our manuscript.
 
 ## Datasets Evaluated
 The code natively supports automated robustness testing on various datasets:
