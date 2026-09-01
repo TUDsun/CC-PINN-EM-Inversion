@@ -14,7 +14,7 @@ CC-PINN introduces a novel physically-informed learning framework to solve highl
 2. **Weight-Normalized Fourier Feature MLP:** Effectively overcomes the "spectral bias" of standard MLPs, enabling the network to capture high-frequency physical boundaries and local high-contrast jumps with extreme stability.
 
 ## Features
-1. **Zero-Padding 2D-FFT Acceleration:** Converts dense matrix-vector multiplications of the Volume Integral Equation (VIE) into spatial linear convolutions, reducing the computational complexity of the Green's function integration from $\mathcal{O}(N^4)$ to $\mathcal{O}(N^2\log N)$.
+1. **Zero-Padding 2D-FFT Acceleration:** Converts dense matrix-vector multiplications of the Volume Integral Equation (VIE) into spatial linear convolutions, reducing the computational complexity of the Green's function integration from $\mathcal{O}(N_\text{g}^2)$ to $\mathcal{O}(N_\text{g}\log N_\text{g})$ (Assuming the domain of interest is discretized into an $N \times N$ grid, the total number of unknown pixels is $N_\text{g} = N^2$.).
 
 ## Implemented Algorithms
 
