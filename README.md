@@ -50,7 +50,7 @@ pip install torch numpy scipy matplotlib
 The main script is highly automated. It executes 11 independent runs (with different random seeds) for all 4 algorithms on the specified datasets, automatically computing metrics (PSNR, SSIM, Time) and plotting convergence curves and boxplots.
 
 ```bash
-python robustness_test_CC-PINN_ES-PINN_CC-CSI-Time-PSNR_autoRun_optimized_Epochs.py
+python CC-PINN-EM-Inversion.py
 ```
 
 ### Outputs
