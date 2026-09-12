@@ -79,6 +79,6 @@ If you find this code or our proposed CC-PINN framework useful in your research,
 ```
 *(Note: Please update the citation information once the paper is officially accepted and published.)*
 
-## ✉️ Contact
+## Contact
 For any questions regarding the code or the paper, please open an issue in this repository or contact:
 **Shilong Sun** - [sunshilong@nudt.edu.cn](mailto:sunshilong@nudt.edu.cn)
