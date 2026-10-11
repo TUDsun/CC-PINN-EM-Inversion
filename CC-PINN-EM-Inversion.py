@@ -5,9 +5,20 @@ import warnings
 import numpy as np
 import torch
 import torch.nn as nn
+
+try:
+  from torch.optim.lr_scheduler import LRScheduler
+except ImportError:
+  from torch.optim.lr_scheduler import _LRScheduler as LRScheduler
+
 import matplotlib.pyplot as plt
+import textwrap
+from matplotlib.ticker import MaxNLocator, ScalarFormatter
+
 from scipy.special import hankel2, j1
 import torch.backends.cudnn as cudnn
+from matplotlib.ticker import MaxNLocator
+from matplotlib.ticker import FuncFormatter
 
 try:
     from torch.nn.utils.parametrizations import weight_norm
@@ -35,12 +46,12 @@ PAD_MULT = 4
 FC_SCALE = 1.0
 CALIB_NUM = 3
 
-# ----------------- 鲁棒性实验配置 -----------------
-NUM_RUNS = 11
+# ----------------- Robustness experiment configuration -----------------
+NUM_RUNS = 1
 
 
 # =============================================================================
-# 1. 共享辅助函数与评估、绘图函数
+# 1. Shared helper functions, evaluation functions, and plotting functions.
 # =============================================================================
 def generate_perfect_normal_B(m, n, scale=1.0, shuffle_seed=123):
     p = torch.linspace(0.001, 0.999, m * n)
@@ -119,58 +130,51 @@ def add_gt_contours(ax, shape_type, ext):
 
 
 def save_reconstruction_plots(eps_np, sigma_np, ext, suffix, save_dir, shape_type, title_val_eps, title_val_sig):
-    """独立的绘图函数，将Epsilon与Sigma画在各自独立的PDF中"""
-    FONT_TITLE = 24
-    FONT_LABEL = 24
-    FONT_TICK = 22
+    FONT_TITLE = 30
+    FONT_LABEL = 30
+    FONT_TICK = 30
 
-    # ---------------- 绘制 Epsilon 独立图 ----------------
-    fig = plt.figure(figsize=(7, 6))  # 适当放大画板尺寸以容纳大字号标签
-    plt.imshow(eps_np.T, extent=ext, origin='lower', cmap='hot_r')
+    # 定义坐标轴转换为 cm 的格式化函数 (1米 = 100厘米)
+    def to_cm(x, pos):
+        return f"{x * 100:g}"
+    cm_formatter = FuncFormatter(to_cm)
 
-    # 色条刻度字号放大
-    cbar = plt.colorbar()
+    # ---------------- Epsilon 绘图 ----------------
+    fig, ax = plt.subplots(figsize=(7, 6))
+    im = ax.imshow(eps_np.T, extent=ext, origin='lower', cmap='hot_r')
+    cbar = fig.colorbar(im, ax=ax)
     cbar.ax.tick_params(labelsize=FONT_TICK)
-
-    plt.grid(True, linestyle='--', alpha=0.5)
-    plt.gca().set_axisbelow(True)
-    add_gt_contours(plt.gca(), shape_type, ext)
-
-    # 设置横纵轴名称及字号
-    plt.xlabel("x [m]", fontsize=FONT_LABEL)
-    plt.ylabel("y [m]", fontsize=FONT_LABEL)
-
-    # 设置标题及字号
+    ax.grid(True, linestyle='--', alpha=0.5)
+    ax.set_axisbelow(True)
+    add_gt_contours(ax, shape_type, ext)
+    
+    # 应用 cm 格式化器并修改标签
+    ax.xaxis.set_major_formatter(cm_formatter)
+    ax.yaxis.set_major_formatter(cm_formatter)
+    ax.set_xlabel("x [cm]", fontsize=FONT_LABEL)
+    ax.set_ylabel("y [cm]", fontsize=FONT_LABEL)
     plt.title(f"Epsilon ($\\epsilon_r={title_val_eps:g}$)", fontsize=FONT_TITLE, pad=15)
-
-    # 设置坐标轴刻度的字号
-    plt.tick_params(axis='both', which='major', labelsize=FONT_TICK)
-
+    ax.tick_params(axis='both', which='major', labelsize=FONT_TICK)
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, f"reconstruction_{suffix}_eps.pdf"), format='pdf', dpi=150)
     plt.close(fig)
 
-    # ---------------- 绘制 Sigma 独立图 ----------------
-    fig = plt.figure(figsize=(7, 6))
-    plt.imshow((sigma_np * 1000).T, extent=ext, origin='lower', cmap='hot_r')
-
-    cbar = plt.colorbar()
+    # ---------------- Sigma 绘图 ----------------
+    fig, ax = plt.subplots(figsize=(7, 6))
+    im = ax.imshow((sigma_np * 1000).T, extent=ext, origin='lower', cmap='hot_r')
+    cbar = fig.colorbar(im, ax=ax)
     cbar.ax.tick_params(labelsize=FONT_TICK)
-
-    plt.grid(True, linestyle='--', alpha=0.5)
-    plt.gca().set_axisbelow(True)
-    add_gt_contours(plt.gca(), shape_type, ext)
-
-    # 设置横纵轴名称及字号
-    plt.xlabel("x [m]", fontsize=FONT_LABEL)
-    plt.ylabel("y [m]", fontsize=FONT_LABEL)
-
-    # 设置标题及字号
+    ax.grid(True, linestyle='--', alpha=0.5)
+    ax.set_axisbelow(True)
+    add_gt_contours(ax, shape_type, ext)
+    
+    # 应用 cm 格式化器并修改标签
+    ax.xaxis.set_major_formatter(cm_formatter)
+    ax.yaxis.set_major_formatter(cm_formatter)
+    ax.set_xlabel("x [cm]", fontsize=FONT_LABEL)
+    ax.set_ylabel("y [cm]", fontsize=FONT_LABEL)
     plt.title(f"Sigma ($\\sigma={title_val_sig:g}$ mS/m)", fontsize=FONT_TITLE, pad=15)
-
-    # 设置坐标轴刻度的字号
-    plt.tick_params(axis='both', which='major', labelsize=FONT_TICK)
-
+    ax.tick_params(axis='both', which='major', labelsize=FONT_TICK)
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, f"reconstruction_{suffix}_sig.pdf"), format='pdf', dpi=150)
     plt.close(fig)
@@ -219,7 +223,7 @@ class MaterialNet(nn.Module):
 
 
 # =============================================================================
-# 2. 物理基础算子与数据加载
+# 2. Physics-based Operators and Data Loading
 # =============================================================================
 def build_fft_green_kernel(k0, dx, dy, N_grid, a_eff, pad_mult=4):
     N_pad = pad_mult * N_grid
@@ -321,8 +325,20 @@ def load_data_cc(file_path):
             Gs_padded[i, :M_i, :] = Gs_list[i]
             Es_padded[i, :M_i] = Es_meas_list[i]
 
-        num = torch.bmm(Gs_padded.conj().transpose(1, 2).contiguous(), Es_padded.unsqueeze(2).contiguous())
-        W_init = (num / (Gs_padded.shape[0] * Gs_padded.shape[1] + 1e-12)).squeeze(2).T
+        # --- MODIFICATION START (修改1：修正初始对比源 W_init 的物理缩放公式) ---
+        Gs_transposed = Gs_padded.conj().transpose(1, 2).contiguous()
+        Es_unsqueeze = Es_padded.unsqueeze(2).contiguous()
+        
+        num = torch.bmm(Gs_transposed, Es_unsqueeze)
+        den = torch.bmm(Gs_padded, num)
+        
+        # 严格遵守L2范数平方进行系数估计
+        norm2_num = torch.sum(torch.abs(num) ** 2, dim=(1, 2))
+        norm2_den = torch.sum(torch.abs(den) ** 2, dim=(1, 2))
+        
+        alpha_i = (norm2_num / (norm2_den + 1e-12)).view(-1, 1, 1)
+        W_init = (alpha_i * num).squeeze(2).T
+        # --- MODIFICATION END ---
 
         dataset[f_val] = {
             'omega': omega, 'inv_omega_eps': torch.tensor(1.0 / (omega * EPS0), dtype=dtype_r, device=device),
@@ -406,13 +422,42 @@ def load_data_es(file_path):
 
 
 # =============================================================================
-# 3. 算法执行器 (Runners)
+# 3. Algorithm Executor (Runners)
 # =============================================================================
-def run_cc_pinn_variant(run_dir, classic_mode=False):
+class MultiGroupCosineAnnealingLR(LRScheduler):
+
+    def __init__(self, optimizer, T_max, eta_min=0.0, last_epoch=-1):
+        self.T_max = T_max
+        # 支持传入单个 float 或针对每个参数组的列表/元组
+        if isinstance(eta_min, (int, float)):
+            self.eta_mins = [float(eta_min)] * len(optimizer.param_groups)
+        else:
+            self.eta_mins = list(eta_min)
+        super().__init__(optimizer, last_epoch)
+
+    def get_lr(self):
+        # 增加截断保护：步数一旦达到或超过 T_max，死锁在设定的最小值，防止余弦反弹
+        if self.last_epoch >= self.T_max:
+            return self.eta_mins
+
+        # 采用闭式解，基于初始 base_lr 计算，永远不会出现卡死现象
+        return [
+            eta_min
+            + (base_lr - eta_min)
+            * (1 + math.cos(math.pi * self.last_epoch / self.T_max))
+            / 2
+            for base_lr, eta_min in zip(self.base_lrs, self.eta_mins)
+        ]
+
+
+def run_cc_pinn_variant(run_dir, classic_mode=False, total_epochs=75000):
     start_time = time.time()
-    TOTAL_EPOCHS = 75000
+    TOTAL_EPOCHS = total_epochs
 
     WW_NUM, ALPHA_VALUE = 0, 10
+    LR_NET_BASE, LR_W_BASE = (1e-3, 2e-3) if "Fresnel" in FILE_NAME else (1e-4, 1e-4)
+    ETA_NET_MIN, ETA_W_MIN = 1e-4, 1e-4
+    WARMUP_STEPS = 500
 
     dataset, r_grid = load_data_cc(FILE_NAME)
     eps_true, sigma_true, DATA_RANGE_EPS, DATA_RANGE_SIG = generate_ground_truth(r_grid, SHAPE_TYPE)
@@ -426,7 +471,7 @@ def run_cc_pinn_variant(run_dir, classic_mode=False):
         W_params[f"f_{str(f_val).replace('.', '_')}"] = nn.Parameter(data['W_init'].to(dtype_c))
 
     optimizer = torch.optim.Adam(
-        [{'params': net_eps.parameters(), 'lr': 1e-3}, {'params': W_params.parameters(), 'lr': 2e-3}])
+        [{'params': net_eps.parameters(), 'lr': LR_NET_BASE}, {'params': W_params.parameters(), 'lr': LR_W_BASE}])
 
     all_freqs = sorted(dataset.keys())
     f_max_global = max(all_freqs)
@@ -445,6 +490,13 @@ def run_cc_pinn_variant(run_dir, classic_mode=False):
     global_step = 0
     j_complex = torch.tensor(1j, dtype=dtype_c, device=device)
 
+    # 调度器定义在所有 stage 外部，传入两个独立的下限： net_eps 降到 1e-5，W_params 降到 1e-4
+    scheduler = MultiGroupCosineAnnealingLR(
+        optimizer,
+        T_max=TOTAL_EPOCHS,  # 全局总步数 75000
+        eta_min=[ETA_NET_MIN, ETA_W_MIN],  # 分别对应两组参数的衰减终点！
+    )
+
     for stage, active_freqs in enumerate(freq_stages):
         epochs = stage_epochs_list[stage]
         N_f_stage = len(active_freqs)
@@ -453,8 +505,7 @@ def run_cc_pinn_variant(run_dir, classic_mode=False):
         Es_meas_batched = torch.stack([dataset[f]['Es_meas_tensor'] for f in active_freqs], dim=0)
         G_hat_batched = torch.stack([dataset[f]['G_hat'] for f in active_freqs], dim=0)
         E_inc_batched = torch.stack([dataset[f]['E_inc_mat'] for f in active_freqs], dim=0)
-        inv_omega_eps_batched = torch.stack([dataset[f]['inv_omega_eps'] for f in active_freqs], dim=0).view(N_f_stage,
-                                                                                                             1, 1)
+        inv_omega_eps_batched = torch.stack([dataset[f]['inv_omega_eps'] for f in active_freqs], dim=0).view(N_f_stage, 1, 1)
         norm_D_batched = torch.stack([dataset[f]['norm_D'] for f in active_freqs], dim=0).view(N_f_stage, 1, 1)
         norm_S_batched = torch.stack([dataset[f]['norm_S'] for f in active_freqs], dim=0).view(N_f_stage, 1, 1)
 
@@ -463,21 +514,29 @@ def run_cc_pinn_variant(run_dir, classic_mode=False):
                                             dtype=dtype_r, device=device).view(N_f_stage)
         Gs_flat = Gs_batched.view(N_f_stage * Gs_batched.shape[1], Gs_batched.shape[2], GRID_SIZE ** 2).contiguous()
 
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-5)
+        # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=ETA_MIN)
 
         for epoch in range(epochs):
             optimizer.zero_grad()
-            eps_curr, sigma_curr = net_eps(x_t, y_t)
+            # eps_curr, sigma_curr = net_eps(x_t, y_t)
+            # =====================================================================================
+            # 【机制 1 关键位置】：跳频后的前 WARMUP_STEPS 轮冻结网络参数，只更新对比源 W，完成场量自洽
+            # =====================================================================================
+            is_net_frozen = (stage > 0 and epoch < WARMUP_STEPS)
+
+            if is_net_frozen:
+                with torch.no_grad():
+                    eps_curr, sigma_curr = net_eps(x_t, y_t)
+            else:
+                eps_curr, sigma_curr = net_eps(x_t, y_t)
+
             chi_batched = eps_curr.to(dtype_c).unsqueeze(0) - j_complex * sigma_curr.to(dtype_c).unsqueeze(
                 0) * inv_omega_eps_batched - 1.0
 
             W_f_batched = torch.stack([W_params[f"f_{str(f).replace('.', '_')}"] for f in active_freqs], dim=0)
-            W_f_vec_batched = W_f_batched.transpose(1, 2).reshape(N_f_stage * Gs_batched.shape[1], GRID_SIZE ** 2,
-                                                                  1).contiguous()
-            Es_pred_batched = torch.bmm(Gs_flat, W_f_vec_batched).squeeze(2).view(N_f_stage, Gs_batched.shape[1],
-                                                                                  Gs_batched.shape[2])
-            loss_Data = torch.mean(torch.abs(Es_pred_batched - Es_meas_batched) ** 2,
-                                   dim=(1, 2)) / norm_D_batched.squeeze()
+            W_f_vec_batched = W_f_batched.transpose(1, 2).reshape(N_f_stage * Gs_batched.shape[1], GRID_SIZE ** 2, 1).contiguous()
+            Es_pred_batched = torch.bmm(Gs_flat, W_f_vec_batched).squeeze(2).view(N_f_stage, Gs_batched.shape[1], Gs_batched.shape[2])
+            loss_Data = torch.mean(torch.abs(Es_pred_batched - Es_meas_batched) ** 2, dim=(1, 2)) / norm_D_batched.squeeze()
 
             E_s_dom_batched = compute_internal_scattered_fft_batched(W_f_batched, G_hat_batched, GRID_SIZE)
             W_pred_batched = chi_batched * (E_inc_batched + E_s_dom_batched)
@@ -493,7 +552,7 @@ def run_cc_pinn_variant(run_dir, classic_mode=False):
                 loss_Cross = torch.mean(torch.abs(Es_cross_pred - Es_meas_batched) ** 2,
                                         dim=(1, 2)) / norm_D_batched.squeeze()
 
-                beta_cross = np.exp(-ALPHA_VALUE * (epoch / stage_epochs_list[0]))
+                beta_cross = np.exp(-ALPHA_VALUE * (epoch / min(stage_epochs_list[0], TOTAL_EPOCHS * 0.2)))
                 total_loss = torch.sum(norm_weights_batched * (loss_Data + loss_State + beta_cross * loss_Cross))
 
             total_loss.backward()
@@ -538,9 +597,9 @@ def run_cc_pinn_variant(run_dir, classic_mode=False):
     torch.cuda.empty_cache()
 
 
-def run_es_pinn(run_dir):
+def run_es_pinn(run_dir, total_epochs=10000):
     start_time = time.time()
-    TOTAL_EPOCHS = 10000
+    TOTAL_EPOCHS = total_epochs
     dataset, r_grid = load_data_es(FILE_NAME)
     eps_true, sigma_true, DATA_RANGE_EPS, DATA_RANGE_SIG = generate_ground_truth(r_grid, SHAPE_TYPE)
 
@@ -624,9 +683,10 @@ def run_es_pinn(run_dir):
     torch.cuda.empty_cache()
 
 
-def run_cc_csi(run_dir):
+def run_cc_csi(run_dir, total_epochs=75000):
     start_time = time.time()
-    TOTAL_EPOCHS = 75000
+    TOTAL_EPOCHS = total_epochs
+    FREEZE_EPOCHS = 500  # <--- 新增变量：跳频后对比度的冻结周期
     WW_NUM = 0
     dataset, r_grid = load_data_cc(FILE_NAME)
     eps_true, sigma_true, DATA_RANGE_EPS, DATA_RANGE_SIG = generate_ground_truth(r_grid, SHAPE_TYPE)
@@ -670,6 +730,18 @@ def run_cc_csi(run_dir):
         omega_0 = dataset[active_freqs[0]]['omega']
 
         J = torch.stack([W_tensors[f] for f in active_freqs], dim=0)
+        
+        # --- MODIFICATION START (修改2：对比源的热启动机制，利用已有 chi 重新估计新频率的 J) ---
+        if stage > 0:
+            for idx, f in enumerate(active_freqs):
+                if f not in freq_stages[stage - 1]:
+                    chi_f_new = chi_master_real + j_complex * chi_master_imag * (omega_0 / dataset[f]['omega'])
+                    W_guess = chi_f_new * E_inc_batched[idx]
+                    E_s_guess = compute_internal_scattered_fft_batched(W_guess.unsqueeze(0), G_hat_batched[idx:idx + 1], GRID_SIZE, PAD_MULT).squeeze(0)
+                    E_tot_guess = E_inc_batched[idx] + E_s_guess
+                    J[idx] = chi_f_new * E_tot_guess
+        # --- MODIFICATION END ---
+
         Etot = E_inc_batched + compute_internal_scattered_fft_batched(J, G_hat_batched, GRID_SIZE, PAD_MULT)
 
         if stage == 0:
@@ -687,14 +759,11 @@ def run_cc_csi(run_dir):
                     omega_0 / omega_batched).view(N_f, 1, 1)
 
             # Phase 1: Update J
-            Es_pred = torch.bmm(Gs_flat, J.transpose(1, 2).reshape(N_f * N_tx, GRID_SIZE ** 2, 1)).squeeze(2).view(N_f,
-                                                                                                                   N_tx,
-                                                                                                                   max_M)
+            Es_pred = torch.bmm(Gs_flat, J.transpose(1, 2).reshape(N_f * N_tx, GRID_SIZE ** 2, 1)).squeeze(2).view(N_f, N_tx, max_M)
             vrho = Es_meas_batched - Es_pred
             chieTot = chi_f * Etot
             vr = chieTot - J
-            Es_cross_pred = torch.bmm(Gs_flat, chieTot.transpose(1, 2).reshape(N_f * N_tx, GRID_SIZE ** 2, 1)).squeeze(
-                2).view(N_f, N_tx, max_M)
+            Es_cross_pred = torch.bmm(Gs_flat, chieTot.transpose(1, 2).reshape(N_f * N_tx, GRID_SIZE ** 2, 1)).squeeze(2).view(N_f, N_tx, max_M)
             vxi = Es_meas_batched - Es_cross_pred
 
             ctmp_S = torch.sum(torch.abs(Es_meas_batched) ** 2, dim=(1, 2), keepdim=True)
@@ -702,14 +771,9 @@ def run_cc_csi(run_dir):
             ctmp_D = torch.sum(torch.abs(chieTot) ** 2, dim=(1, 2), keepdim=True)
             etaD = norm_weights_batched.view(N_f, 1, 1) * ctmp_D / (ctmp_D ** 2 + 1e-12)
 
-            Phixi = torch.bmm(Gs_flat.conj().transpose(1, 2), vxi.view(N_f * N_tx, max_M, 1)).view(N_f, N_tx,
-                                                                                                   GRID_SIZE ** 2).transpose(
-                1, 2)
-            chiA = compute_internal_scattered_fft_batched(torch.conj(chi_f) * (etaD * vr - etaS * Phixi), G_hat_batched,
-                                                          GRID_SIZE, PAD_MULT, adjoint=True)
-            vgs = -etaS * torch.bmm(Gs_flat.conj().transpose(1, 2), vrho.view(N_f * N_tx, max_M, 1)).view(N_f, N_tx,
-                                                                                                          GRID_SIZE ** 2).transpose(
-                1, 2)
+            Phixi = torch.bmm(Gs_flat.conj().transpose(1, 2), vxi.view(N_f * N_tx, max_M, 1)).view(N_f, N_tx, GRID_SIZE ** 2).transpose(1, 2)
+            chiA = compute_internal_scattered_fft_batched(torch.conj(chi_f) * (etaD * vr - etaS * Phixi), G_hat_batched, GRID_SIZE, PAD_MULT, adjoint=True)
+            vgs = -etaS * torch.bmm(Gs_flat.conj().transpose(1, 2), vrho.view(N_f * N_tx, max_M, 1)).view(N_f, N_tx, GRID_SIZE ** 2).transpose(1, 2)
             g_W = vgs - etaD * vr + chiA
 
             if is_first_cg_step:
@@ -717,8 +781,7 @@ def run_cc_csi(run_dir):
                 is_first_cg_step = False
             else:
                 ctmp_J = torch.sum(torch.abs(g_prev_batched) ** 2, dim=(1, 2), keepdim=True)
-                t_vJ = (ctmp_J / (ctmp_J + 1e-12)) * torch.sum(torch.conj(g_W) * (g_W - g_prev_batched), dim=(1, 2),
-                                                               keepdim=True) / (ctmp_J + 1e-12)
+                t_vJ = (ctmp_J / (ctmp_J + 1e-12)) * torch.sum(torch.conj(g_W) * (g_W - g_prev_batched), dim=(1, 2), keepdim=True) / (ctmp_J + 1e-12)
                 beta_J = ((torch.sqrt(torch.sum(torch.abs(v_prev_batched) ** 2, dim=(1, 2), keepdim=True)) / (
                         torch.sqrt(torch.sum(torch.abs(g_W) ** 2, dim=(1, 2),
                                              keepdim=True)) + 1e-12)) < 1000.0).float() * torch.clamp(
@@ -747,86 +810,93 @@ def run_cc_csi(run_dir):
             chieTot_curr, vr_curr = chi_f_curr * Etot, (chi_f_curr * Etot) - J
             vxi_curr = Es_meas_batched - torch.bmm(Gs_flat,
                                                    chieTot_curr.transpose(1, 2).reshape(N_f * N_tx, GRID_SIZE ** 2,
-                                                                                        1)).squeeze(2).view(N_f, N_tx,
-                                                                                                            max_M)
-            Phixi_curr = torch.bmm(Gs_flat.conj().transpose(1, 2), vxi_curr.view(N_f * N_tx, max_M, 1)).view(N_f, N_tx,
-                                                                                                             GRID_SIZE ** 2).transpose(
-                1, 2)
+                                                                                        1)).squeeze(2).view(N_f, N_tx, max_M)
+            Phixi_curr = torch.bmm(Gs_flat.conj().transpose(1, 2), vxi_curr.view(N_f * N_tx, max_M, 1)).view(N_f, N_tx, GRID_SIZE ** 2).transpose(1, 2)
 
-            etaD_curr = (norm_weights_batched * torch.sum(torch.abs(chieTot_curr) ** 2, dim=(1, 2)) / (
-                    torch.sum(torch.abs(chieTot_curr) ** 2, dim=(1, 2)) ** 2 + 1e-12)).view(N_f, 1, 1)
-            vgChiF_z = 2 * torch.sum(torch.conj(Etot) * (etaD_curr * vr_curr - etaS * Phixi_curr), dim=2)
-            vgChiCom = torch.sum(
-                torch.real(vgChiF_z) + 1j * (omega_0 / omega_batched).view(N_f, 1) * torch.imag(vgChiF_z),
-                dim=0).unsqueeze(1)
+            # --- MODIFICATION START (修改3：引入跳频后的参数冻结期逻辑机制) ---
+            is_chi_frozen = (stage > 0) and (epoch < FREEZE_EPOCHS)
+            
+            if not is_chi_frozen:
+                etaD_curr = (norm_weights_batched * torch.sum(torch.abs(chieTot_curr) ** 2, dim=(1, 2)) / (
+                        torch.sum(torch.abs(chieTot_curr) ** 2, dim=(1, 2)) ** 2 + 1e-12)).view(N_f, 1, 1)
+                vgChiF_z = 2 * torch.sum(torch.conj(Etot) * (etaD_curr * vr_curr - etaS * Phixi_curr), dim=2)
+                vgChiCom = torch.sum(
+                    torch.real(vgChiF_z) + 1j * (omega_0 / omega_batched).view(N_f, 1) * torch.imag(vgChiF_z),
+                    dim=0).unsqueeze(1)
 
-            ETot2_z = torch.sum(torch.real(Etot) ** 2 + torch.imag(Etot) ** 2, dim=2)
-            vgChi = torch.real(vgChiCom) / (torch.sum(ETot2_z, dim=0).unsqueeze(1) + 1e-12) + 1j * torch.imag(
-                vgChiCom) / (torch.sum(ETot2_z * ((omega_0 / omega_batched).view(N_f, 1) ** 2), dim=0).unsqueeze(
-                1) + 1e-12)
+                ETot2_z = torch.sum(torch.real(Etot) ** 2 + torch.imag(Etot) ** 2, dim=2)
+                vgChi = torch.real(vgChiCom) / (torch.sum(ETot2_z, dim=0).unsqueeze(1) + 1e-12) + 1j * torch.imag(
+                    vgChiCom) / (torch.sum(ETot2_z * ((omega_0 / omega_batched).view(N_f, 1) ** 2), dim=0).unsqueeze(
+                    1) + 1e-12)
 
-            if epoch == 0:
-                vnuChiCom = vgChi.clone()
+                # --- MODIFICATION START (修改4：跨频率阶段的 PR-CG 动量方向重置机制) ---
+                is_first_chi_step = (epoch == 0) or (stage > 0 and epoch == FREEZE_EPOCHS)
+                if is_first_chi_step:
+                    vnuChiCom = vgChi.clone()
+                else:
+                    vnuChiCom = vgChi + vnuChiCom_prev * torch.conj((torch.sum(torch.abs(vgChi_prev) ** 2) / (
+                            torch.sum(torch.abs(vgChi_prev) ** 2) + 1e-12)) * torch.sum(
+                        torch.conj(vgChi) * (vgChi - vgChi_prev)) / (torch.sum(torch.abs(vgChi_prev) ** 2) + 1e-12))
+                # --- MODIFICATION END ---
+
+                vnuChi_f = torch.real(vnuChiCom).unsqueeze(0) + j_complex * torch.imag(vnuChiCom).unsqueeze(0) * (
+                        omega_0 / omega_batched).view(N_f, 1, 1)
+                enuchi = vnuChi_f * Etot
+                phienuchi = torch.bmm(Gs_flat, enuchi.transpose(1, 2).reshape(N_f * N_tx, GRID_SIZE ** 2, 1)).squeeze(
+                    2).view(N_f, N_tx, max_M)
+
+                a0 = torch.sum(torch.abs(vr_curr) ** 2, dim=(1, 2))
+                a1 = 2.0 * torch.sum(torch.real(enuchi) * torch.real(vr_curr) + torch.imag(enuchi) * torch.imag(vr_curr),
+                                     dim=(1, 2))
+                a2 = torch.sum(torch.abs(enuchi) ** 2, dim=(1, 2))
+
+                b1 = 2.0 * torch.sum(
+                    torch.real(enuchi) * torch.real(chieTot_curr) + torch.imag(enuchi) * torch.imag(chieTot_curr),
+                    dim=(1, 2))
+                b2 = a2
+                b0 = torch.sum(torch.abs(chieTot_curr) ** 2, dim=(1, 2))
+
+                etaS_sq = etaS.squeeze(1).squeeze(1)
+                # 修正复用处 1: 修正 etaD_curr 冗余计算
+                etaD_sq = norm_weights_batched * b0 / (b0 ** 2 + 1e-12)
+                etaD_curr = etaD_sq.view(N_f, 1, 1)
+
+                # 修正复用处 2: 提取变量 c0, c1, c2，避免后续重复运算
+                c0 = etaS_sq * torch.sum(torch.abs(vxi_curr) ** 2, dim=(1, 2))
+                c1 = -2.0 * etaS_sq * torch.sum(
+                    torch.real(phienuchi) * torch.real(vxi_curr) + torch.imag(phienuchi) * torch.imag(vxi_curr), dim=(1, 2))
+                c2 = etaS_sq * torch.sum(torch.abs(phienuchi) ** 2, dim=(1, 2))
+
+                c0_sum = torch.sum(c0).item()
+                c1_sum = torch.sum(c1).item()
+                c2_sum = torch.sum(c2).item()
+
+                e1 = torch.sum(etaD_sq * a1 + c1).item()
+                e2 = torch.sum(etaD_sq * a2 + c2).item()
+                sb0 = -e1 / (2 * e2 + 1e-12)
+
+                x_vec = torch.linspace(float(-10.0 * abs(sb0)), 0.0, steps=100000, device=device)
+                f_val = c2_sum * (x_vec ** 2) + c1_sum * x_vec + c0_sum
+                for i in range(N_f):
+                    # 修正复用处 4: 剔除错误的多余分母冗余
+                    num_term = a2[i].item() * (x_vec ** 2) + a1[i].item() * x_vec + a0[i].item()
+                    den_term = b2[i].item() * (x_vec ** 2) + b1[i].item() * x_vec + b0[i].item()
+                    f_val += norm_weights_batched[i].item() * (num_term / (den_term + 1e-12))
+
+                min_idx = torch.argmin(f_val)
+                sb_opt = x_vec[min_idx].item()
+
+                # 【核心修复】：如果数值网格搜索卡死在边界(>=0)，强制回退采用解析公式求出的步长 sb0
+                if sb_opt >= 0:
+                    sb_opt = min(sb0, 0.0)
+                # -----------------------------------------------------------------------------------------------------------------
+
+                chi_master_real = torch.clamp(chi_master_real + sb_opt * torch.real(vnuChiCom), min=0.0)
+                chi_master_imag = torch.clamp(chi_master_imag + sb_opt * torch.imag(vnuChiCom), max=0.0)
+                vgChi_prev, vnuChiCom_prev = vgChi, vnuChiCom
             else:
-                vnuChiCom = vgChi + vnuChiCom_prev * torch.conj((torch.sum(torch.abs(vgChi_prev) ** 2) / (
-                        torch.sum(torch.abs(vgChi_prev) ** 2) + 1e-12)) * torch.sum(
-                    torch.conj(vgChi) * (vgChi - vgChi_prev)) / (torch.sum(torch.abs(vgChi_prev) ** 2) + 1e-12))
-
-            vnuChi_f = torch.real(vnuChiCom).unsqueeze(0) + j_complex * torch.imag(vnuChiCom).unsqueeze(0) * (
-                    omega_0 / omega_batched).view(N_f, 1, 1)
-            enuchi = vnuChi_f * Etot
-            phienuchi = torch.bmm(Gs_flat, enuchi.transpose(1, 2).reshape(N_f * N_tx, GRID_SIZE ** 2, 1)).squeeze(
-                2).view(N_f, N_tx, max_M)
-
-            a0 = torch.sum(torch.abs(vr_curr) ** 2, dim=(1, 2))
-            a1 = 2.0 * torch.sum(torch.real(enuchi) * torch.real(vr_curr) + torch.imag(enuchi) * torch.imag(vr_curr),
-                                 dim=(1, 2))
-            a2 = torch.sum(torch.abs(enuchi) ** 2, dim=(1, 2))
-
-            b1 = 2.0 * torch.sum(
-                torch.real(enuchi) * torch.real(chieTot_curr) + torch.imag(enuchi) * torch.imag(chieTot_curr),
-                dim=(1, 2))
-            b2 = a2
-            b0 = torch.sum(torch.abs(chieTot_curr) ** 2, dim=(1, 2))
-
-            etaS_sq = etaS.squeeze(1).squeeze(1)
-            # 修正复用处 1: 修正 etaD_curr 冗余计算
-            etaD_sq = norm_weights_batched * b0 / (b0 ** 2 + 1e-12)
-            etaD_curr = etaD_sq.view(N_f, 1, 1)
-
-            # 修正复用处 2: 提取变量 c0, c1, c2，避免后续重复运算
-            c0 = etaS_sq * torch.sum(torch.abs(vxi_curr) ** 2, dim=(1, 2))
-            c1 = -2.0 * etaS_sq * torch.sum(
-                torch.real(phienuchi) * torch.real(vxi_curr) + torch.imag(phienuchi) * torch.imag(vxi_curr), dim=(1, 2))
-            c2 = etaS_sq * torch.sum(torch.abs(phienuchi) ** 2, dim=(1, 2))
-
-            c0_sum = torch.sum(c0).item()
-            c1_sum = torch.sum(c1).item()
-            c2_sum = torch.sum(c2).item()
-
-            e1 = torch.sum(etaD_sq * a1 + c1).item()
-            e2 = torch.sum(etaD_sq * a2 + c2).item()
-            sb0 = -e1 / (2 * e2 + 1e-12)
-
-            x_vec = torch.linspace(float(-10.0 * abs(sb0)), 0.0, steps=100000, device=device)
-            f_val = c2_sum * (x_vec ** 2) + c1_sum * x_vec + c0_sum
-            for i in range(N_f):
-                # 修正复用处 4: 剔除错误的多余分母冗余
-                num_term = a2[i].item() * (x_vec ** 2) + a1[i].item() * x_vec + a0[i].item()
-                den_term = b2[i].item() * (x_vec ** 2) + b1[i].item() * x_vec + b0[i].item()
-                f_val += norm_weights_batched[i].item() * (num_term / (den_term + 1e-12))
-
-            min_idx = torch.argmin(f_val)
-            sb_opt = x_vec[min_idx].item()
-
-            # 【核心修复】：如果数值网格搜索卡死在边界(>=0)，强制回退采用解析公式求出的步长 sb0
-            if sb_opt >= 0:
-                sb_opt = min(sb0, 0.0)
-            # -----------------------------------------------------------------------------------------------------------------
-
-            chi_master_real = torch.clamp(chi_master_real + sb_opt * torch.real(vnuChiCom), min=0.0)
-            chi_master_imag = torch.clamp(chi_master_imag + sb_opt * torch.imag(vnuChiCom), max=0.0)
-            vgChi_prev, vnuChiCom_prev = vgChi, vnuChiCom
+                sb_opt = 0.0  # 冻结期间对比度无变化，步长强制为0
+            # --- MODIFICATION END ---
 
             global_step += 1
             if global_step % 100 == 0:
@@ -863,9 +933,9 @@ def run_cc_csi(run_dir):
 
 
 # =============================================================================
-# 4. 绘图与可视化
+# 4. Plotting and Visualization
 # =============================================================================
-def plot_robustness_results(root_dir):
+def plot_robustness_results_(root_dir):
     algs = [('CC-PINN', 'CC-PINN'), ('Data+State-PINN', 'Data+State-PINN'), ('ES-PINN', 'ES-PINN'), ('CC-CSI', 'CC-CSI')]
 
     # --- 1. 颜色与线型区分 ---
@@ -873,10 +943,10 @@ def plot_robustness_results(root_dir):
     linestyles = ['-', '--', '-.', ':']  # 分别对应: 实线, 虚线, 点划线, 点线
 
     # --- 2. 统一定义字号 ---
-    FONT_TITLE = 24
-    FONT_LABEL = 22
-    FONT_TICK = 22
-    FONT_LEGEND = 22
+    FONT_TITLE = 28
+    FONT_LABEL = 26
+    FONT_TICK = 26
+    FONT_LEGEND = 26
     LINE_WIDTH = 2.5
 
     # 适当放大画布以容纳大字号
@@ -1029,7 +1099,7 @@ def plot_robustness_results(root_dir):
         x, y = median.get_xdata(), median.get_ydata()
         # x.mean() 取水平线段的中点，y[0] 是纵坐标。在其正上方添加文本
         ax_bp_eps.text(x.mean(), y[0], f'{y[0]:.2f}',
-                       ha='center', va='bottom', color='red', fontsize=22, fontweight='bold')
+                       ha='center', va='bottom', color='red', fontsize=24, fontweight='bold')
 
     ax_bp_eps.set_title('Epsilon Final PSNR Boxplot', fontsize=FONT_TITLE, pad=15)
     ax_bp_eps.set_ylabel('PSNR (dB)', fontsize=FONT_LABEL)
@@ -1048,7 +1118,7 @@ def plot_robustness_results(root_dir):
     for median in bplot_sig['medians']:
         x, y = median.get_xdata(), median.get_ydata()
         ax_bp_sig.text(x.mean(), y[0], f'{y[0]:.2f}',
-                       ha='center', va='bottom', color='red', fontsize=22, fontweight='bold')
+                       ha='center', va='bottom', color='red', fontsize=24, fontweight='bold')
 
     ax_bp_sig.set_title('Sigma Final PSNR Boxplot', fontsize=FONT_TITLE, pad=15)
     ax_bp_sig.set_ylabel('PSNR (dB)', fontsize=FONT_LABEL)
@@ -1068,7 +1138,7 @@ def plot_robustness_results(root_dir):
         for median in bplot_time['medians']:
             x, y = median.get_xdata(), median.get_ydata()
             ax_time.text(x.mean(), y[0], f'{y[0]:.2f}',
-                         ha='center', va='bottom', color='red', fontsize=22, fontweight='bold')
+                         ha='center', va='bottom', color='red', fontsize=24, fontweight='bold')
 
         ax_time.set_title('Algorithm Running Time Boxplot', fontsize=FONT_TITLE, pad=15)
         ax_time.set_ylabel('Time (Seconds)', fontsize=FONT_LABEL)
@@ -1079,12 +1149,260 @@ def plot_robustness_results(root_dir):
         plt.close(fig_time)
 
 
+def plot_robustness_results(root_dir):
+    algs = [('CC-PINN', 'CC-PINN'), ('Data+State-PINN', 'Data+State-PINN'), ('ES-PINN', 'ES-PINN'), ('CC-CSI', 'CC-CSI')]
+
+    # --- 1. 颜色与线型区分 ---
+    colors = ['blue', 'orange', 'green', 'red']
+    linestyles = ['-', '--', '-.', ':']  # 分别对应: 实线, 虚线, 点划线, 点线
+
+    # --- 2. 统一定义字号 ---
+    FONT_TITLE = 28
+    FONT_LABEL = 26
+    FONT_TICK = 26
+    FONT_LEGEND = 26
+    LINE_WIDTH = 2.5
+    
+    # 内部辅助函数：格式化坐标轴，控制刻度数并使用科学计数法防止重叠
+    def apply_axis_formatting(ax, is_x_twin=False, is_boxplot=False):
+        if not is_boxplot:
+            # 横轴限制刻度数和科学计数法
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=5))
+            x_formatter = ScalarFormatter(useMathText=True)
+            x_formatter.set_scientific(True)
+            x_formatter.set_powerlimits((-3, 3))
+            ax.xaxis.set_major_formatter(x_formatter)
+            ax.xaxis.get_offset_text().set_fontsize(FONT_TICK)
+
+        if not is_x_twin:
+            # 纵轴限制刻度数和科学计数法
+            ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
+            y_formatter = ScalarFormatter(useMathText=True)
+            y_formatter.set_scientific(True)
+            y_formatter.set_powerlimits((-3, 3))
+            ax.yaxis.set_major_formatter(y_formatter)
+            ax.yaxis.get_offset_text().set_fontsize(FONT_TICK)
+
+    # 适当放大画布以容纳大字号
+    fig_eps_step, ax_eps_step = plt.subplots(figsize=(10, 10))
+    ax_eps_step_twin = ax_eps_step.twiny()
+
+    fig_sig_step, ax_sig_step = plt.subplots(figsize=(10, 10))
+    ax_sig_step_twin = ax_sig_step.twiny()
+
+    fig_eps_time, ax_eps_time = plt.subplots(figsize=(10, 9))
+    fig_sig_time, ax_sig_time = plt.subplots(figsize=(10, 9))
+
+    final_psnrs_eps, final_psnrs_sig, run_times_list, labels = [], [], [], []
+
+    for i, (display_name, folder_name) in enumerate(algs):
+        alg_dir = os.path.join(root_dir, folder_name)
+        if not os.path.exists(alg_dir): continue
+
+        runs_eps, runs_sig, runs_time = [], [], []
+        steps = None
+
+        for run in sorted(os.listdir(alg_dir)):
+            if not run.startswith('run'): continue
+            metrics_file = os.path.join(alg_dir, run, 'metrics.npz')
+            if not os.path.exists(metrics_file): continue
+
+            data = np.load(metrics_file)
+            if steps is None: steps = data['step']
+            runs_eps.append(data['psnr_eps'])
+            runs_sig.append(data['psnr_sig'])
+            if 'run_time' in data: runs_time.append(float(data['run_time']))
+
+        if not runs_eps: continue
+
+        runs_eps, runs_sig = np.array(runs_eps), np.array(runs_sig)
+        mean_eps, std_eps = np.mean(runs_eps, axis=0), np.std(runs_eps, axis=0)
+        mean_sig, std_sig = np.mean(runs_sig, axis=0), np.std(runs_sig, axis=0)
+
+        # ---------------- 绘制 Step-PSNR 收敛图 ----------------
+        if display_name == 'ES-PINN':
+            ax_eps_step_twin.plot(steps, mean_eps, label=display_name, color=colors[i], linestyle=linestyles[i],
+                                  linewidth=LINE_WIDTH)
+            if len(runs_eps) > 1: ax_eps_step_twin.fill_between(steps, mean_eps - std_eps, mean_eps + std_eps,
+                                                                color=colors[i], alpha=0.2)
+
+            ax_sig_step_twin.plot(steps, mean_sig, label=display_name, color=colors[i], linestyle=linestyles[i],
+                                  linewidth=LINE_WIDTH)
+            if len(runs_sig) > 1: ax_sig_step_twin.fill_between(steps, mean_sig - std_sig, mean_sig + std_sig,
+                                                                color=colors[i], alpha=0.2)
+        else:
+            ax_eps_step.plot(steps, mean_eps, label=display_name, color=colors[i], linestyle=linestyles[i],
+                             linewidth=LINE_WIDTH)
+            if len(runs_eps) > 1: ax_eps_step.fill_between(steps, mean_eps - std_eps, mean_eps + std_eps,
+                                                           color=colors[i], alpha=0.2)
+
+            ax_sig_step.plot(steps, mean_sig, label=display_name, color=colors[i], linestyle=linestyles[i],
+                             linewidth=LINE_WIDTH)
+            if len(runs_sig) > 1: ax_sig_step.fill_between(steps, mean_sig - std_sig, mean_sig + std_sig,
+                                                           color=colors[i], alpha=0.2)
+
+        # ---------------- 绘制 Time-PSNR 收敛图 ----------------
+        avg_time = np.mean(runs_time) if runs_time else 0.0
+        time_axis = (steps / np.max(steps)) * avg_time if avg_time > 0 else steps
+
+        ax_eps_time.plot(time_axis, mean_eps, label=display_name, color=colors[i], linestyle=linestyles[i],
+                         linewidth=LINE_WIDTH)
+        if len(runs_eps) > 1: ax_eps_time.fill_between(time_axis, mean_eps - std_eps, mean_eps + std_eps,
+                                                       color=colors[i], alpha=0.2)
+
+        ax_sig_time.plot(time_axis, mean_sig, label=display_name, color=colors[i], linestyle=linestyles[i],
+                         linewidth=LINE_WIDTH)
+        if len(runs_sig) > 1: ax_sig_time.fill_between(time_axis, mean_sig - std_sig, mean_sig + std_sig,
+                                                       color=colors[i], alpha=0.2)
+        
+        # 仍然保留原始的 NUM_RUNS 变量逻辑（需确保上文或外部环境已定义 NUM_RUNS）
+        final_psnrs_eps.append(runs_eps[:, -1] if len(runs_eps) > 1 else np.repeat(runs_eps[0, -1], NUM_RUNS))
+        final_psnrs_sig.append(runs_sig[:, -1] if len(runs_sig) > 1 else np.repeat(runs_sig[0, -1], NUM_RUNS))
+        run_times_list.append(runs_time if runs_time else [0.0] * max(1, len(runs_eps)))
+        labels.append(display_name)
+
+    # =============== 调整字号与保存图表 ===============
+
+    # -- Epsilon Step 收敛图 --
+    ax_eps_step.set_title('Epsilon (Relative Permittivity) PSNR vs Steps', fontsize=FONT_TITLE, pad=20)
+    
+    # 【Bug 修复关键点】加入 \n 换行并增加 labelpad=15，避免标签过长导致的与右侧科学计数法文本 (x 10^4) 发生水平及垂直重叠
+    ax_eps_step.set_xlabel('Training Steps\n(CC-PINN / Data+State-PINN / CC-CSI)', fontsize=FONT_LABEL, labelpad=15)
+    ax_eps_step_twin.set_xlabel('Training Steps (ES-PINN)', color='green', fontsize=FONT_LABEL, labelpad=15)
+    ax_eps_step.set_ylabel('PSNR (dB)', fontsize=FONT_LABEL)
+
+    ax_eps_step.tick_params(axis='both', which='major', labelsize=FONT_TICK)
+    ax_eps_step_twin.tick_params(axis='x', which='major', colors='green', labelsize=FONT_TICK)
+    ax_eps_step.grid(True, linestyle='--', alpha=0.7)
+    
+    apply_axis_formatting(ax_eps_step)
+    apply_axis_formatting(ax_eps_step_twin, is_x_twin=True)
+
+    h1, l1 = ax_eps_step.get_legend_handles_labels()
+    h2, l2 = ax_eps_step_twin.get_legend_handles_labels()
+    ax_eps_step.legend(h1 + h2, l1 + l2, loc='best', fontsize=FONT_LEGEND)
+    fig_eps_step.tight_layout(pad=1.5)  # 增加pad自动调整间距
+    fig_eps_step.savefig(os.path.join(root_dir, 'PSNR_Convergence_eps.pdf'), format='pdf')
+    plt.close(fig_eps_step)
+
+    # -- Sigma Step 收敛图 --
+    ax_sig_step.set_title('Sigma (Conductivity) PSNR vs Steps', fontsize=FONT_TITLE, pad=20)
+    
+    # 同样对该图作换行与labelpad处理
+    ax_sig_step.set_xlabel('Training Steps\n(CC-PINN / Data+State-PINN / CC-CSI)', fontsize=FONT_LABEL, labelpad=15)
+    ax_sig_step_twin.set_xlabel('Training Steps (ES-PINN)', color='green', fontsize=FONT_LABEL, labelpad=15)
+    ax_sig_step.set_ylabel('PSNR (dB)', fontsize=FONT_LABEL)
+
+    ax_sig_step.tick_params(axis='both', which='major', labelsize=FONT_TICK)
+    ax_sig_step_twin.tick_params(axis='x', which='major', colors='green', labelsize=FONT_TICK)
+    ax_sig_step.grid(True, linestyle='--', alpha=0.7)
+
+    apply_axis_formatting(ax_sig_step)
+    apply_axis_formatting(ax_sig_step_twin, is_x_twin=True)
+
+    h1, l1 = ax_sig_step.get_legend_handles_labels()
+    h2, l2 = ax_sig_step_twin.get_legend_handles_labels()
+    ax_sig_step.legend(h1 + h2, l1 + l2, loc='best', fontsize=FONT_LEGEND)
+    fig_sig_step.tight_layout(pad=1.5)
+    fig_sig_step.savefig(os.path.join(root_dir, 'PSNR_Convergence_sig.pdf'), format='pdf')
+    plt.close(fig_sig_step)
+
+    # -- Epsilon Time 收敛图 --
+    ax_eps_time.set_title('Epsilon (Relative Permittivity) PSNR vs Running Time', fontsize=FONT_TITLE, pad=15)
+    ax_eps_time.set_xlabel('Running Time (Seconds)', fontsize=FONT_LABEL, labelpad=15)
+    ax_eps_time.set_ylabel('PSNR (dB)', fontsize=FONT_LABEL)
+    ax_eps_time.tick_params(axis='both', which='major', labelsize=FONT_TICK)
+    
+    apply_axis_formatting(ax_eps_time)
+    
+    ax_eps_time.legend(loc='best', fontsize=FONT_LEGEND)
+    ax_eps_time.grid(True, linestyle='--', alpha=0.7)
+    fig_eps_time.tight_layout(pad=1.5)
+    fig_eps_time.savefig(os.path.join(root_dir, 'Time_PSNR_Convergence_eps.pdf'), format='pdf')
+    plt.close(fig_eps_time)
+
+    # -- Sigma Time 收敛图 --
+    ax_sig_time.set_title('Sigma (Conductivity) PSNR vs Running Time', fontsize=FONT_TITLE, pad=15)
+    ax_sig_time.set_xlabel('Running Time (Seconds)', fontsize=FONT_LABEL, labelpad=15)
+    ax_sig_time.set_ylabel('PSNR (dB)', fontsize=FONT_LABEL)
+    ax_sig_time.tick_params(axis='both', which='major', labelsize=FONT_TICK)
+    
+    apply_axis_formatting(ax_sig_time)
+    
+    ax_sig_time.legend(loc='best', fontsize=FONT_LEGEND)
+    ax_sig_time.grid(True, linestyle='--', alpha=0.7)
+    fig_sig_time.tight_layout(pad=1.5)
+    fig_sig_time.savefig(os.path.join(root_dir, 'Time_PSNR_Convergence_sig.pdf'), format='pdf')
+    plt.close(fig_sig_time)
+
+
+    # =============== Boxplots 自动换行处理 ===============
+    
+    # 使用 textwrap 根据长度自动换行，避免X轴 Boxplot 标签重叠
+    wrapped_labels = [textwrap.fill(lbl, width=10, break_long_words=False) for lbl in labels]
+
+    fig_bp_eps, ax_bp_eps = plt.subplots(figsize=(10, 8))
+    bplot_eps = ax_bp_eps.boxplot(final_psnrs_eps, tick_labels=wrapped_labels, patch_artist=True,
+                                  boxprops=dict(facecolor='lightgray'))
+
+    for median in bplot_eps['medians']:
+        x, y = median.get_xdata(), median.get_ydata()
+        ax_bp_eps.text(x.mean(), y[0], f'{y[0]:.2f}',
+                       ha='center', va='bottom', color='red', fontsize=24, fontweight='bold')
+
+    ax_bp_eps.set_title('Epsilon Final PSNR Boxplot', fontsize=FONT_TITLE, pad=15)
+    ax_bp_eps.set_ylabel('PSNR (dB)', fontsize=FONT_LABEL)
+    ax_bp_eps.tick_params(axis='both', which='major', labelsize=FONT_TICK)
+    ax_bp_eps.grid(True, linestyle='--', alpha=0.7)
+    apply_axis_formatting(ax_bp_eps, is_boxplot=True)
+    fig_bp_eps.tight_layout(pad=1.5)
+    fig_bp_eps.savefig(os.path.join(root_dir, 'PSNR_Boxplots_eps.pdf'), format='pdf')
+    plt.close(fig_bp_eps)
+
+    fig_bp_sig, ax_bp_sig = plt.subplots(figsize=(10, 8))
+    bplot_sig = ax_bp_sig.boxplot(final_psnrs_sig, tick_labels=wrapped_labels, patch_artist=True,
+                                  boxprops=dict(facecolor='lightgray'))
+
+    for median in bplot_sig['medians']:
+        x, y = median.get_xdata(), median.get_ydata()
+        ax_bp_sig.text(x.mean(), y[0], f'{y[0]:.2f}',
+                       ha='center', va='bottom', color='red', fontsize=24, fontweight='bold')
+
+    ax_bp_sig.set_title('Sigma Final PSNR Boxplot', fontsize=FONT_TITLE, pad=15)
+    ax_bp_sig.set_ylabel('PSNR (dB)', fontsize=FONT_LABEL)
+    ax_bp_sig.tick_params(axis='both', which='major', labelsize=FONT_TICK)
+    ax_bp_sig.grid(True, linestyle='--', alpha=0.7)
+    apply_axis_formatting(ax_bp_sig, is_boxplot=True)
+    fig_bp_sig.tight_layout(pad=1.5)
+    fig_bp_sig.savefig(os.path.join(root_dir, 'PSNR_Boxplots_sig.pdf'), format='pdf')
+    plt.close(fig_bp_sig)
+
+    if any(np.sum(times) > 0 for times in run_times_list):
+        fig_time, ax_time = plt.subplots(figsize=(10, 8))
+        bplot_time = ax_time.boxplot(run_times_list, tick_labels=wrapped_labels, patch_artist=True,
+                                     boxprops=dict(facecolor='lightgray'))
+
+        for median in bplot_time['medians']:
+            x, y = median.get_xdata(), median.get_ydata()
+            ax_time.text(x.mean(), y[0], f'{y[0]:.2f}',
+                         ha='center', va='bottom', color='red', fontsize=24, fontweight='bold')
+
+        ax_time.set_title('Algorithm Running Time Boxplot', fontsize=FONT_TITLE, pad=15)
+        ax_time.set_ylabel('Time (Seconds)', fontsize=FONT_LABEL)
+        ax_time.tick_params(axis='both', which='major', labelsize=FONT_TICK)
+        ax_time.grid(True, linestyle='--', alpha=0.7)
+        apply_axis_formatting(ax_time, is_boxplot=True)
+        fig_time.tight_layout(pad=1.5)
+        fig_time.savefig(os.path.join(root_dir, 'Time_Boxplots.pdf'), format='pdf')
+        plt.close(fig_time)
+
+
 # =============================================================================
-# 5. 主调控循环 (自适应完成多组数据集的测试)
+# 5. Main control loop (adaptively completing tests across multiple datasets).
 # =============================================================================
 if __name__ == "__main__":
 
-    # 定义需要自动进行鲁棒性测试的 4 组数据集
+    # Define the dataset(s) that require automated robustness testing.
 
     # --------------------Simulation Data---------------------
     # "Austria" Target
@@ -1092,57 +1410,53 @@ if __name__ == "__main__":
     #     ("AustriaDiel_4_3freqs_20dB", "Data_Sim/AustriaDiel_4_20dB.txt", 'Austria', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (4, 4, 4), (0e-3, 0e-3, 0e-3)),
     #     ("AustriaDiel_5_3freqs_20dB", "Data_Sim/AustriaDiel_5_20dB.txt", 'Austria', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (5, 5, 5), (0e-3, 0e-3, 0e-3)),
     #     ("AustriaDiel_6_3freqs_20dB", "Data_Sim/AustriaDiel_6_20dB.txt", 'Austria', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (6, 6, 6), (0e-3, 0e-3, 0e-3)),
-    #     ("AustriaDiel_7_3freqs_20dB", "Data_Sim/AustriaDiel_7_20dB.txt", 'Austria', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (7, 7, 7), (0e-3, 0e-3, 0e-3))
-    # ]
-
-    # "bowtie-cross" Target
-    # datasets_to_test = [
+    #     ("AustriaDiel_7_3freqs_20dB", "Data_Sim/AustriaDiel_7_20dB.txt", 'Austria', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (7, 7, 7), (0e-3, 0e-3, 0e-3)),
+    #     ("AustriaDiel_8_3freqs_20dB", "Data_Sim/AustriaDiel_8_20dB.txt", 'Austria', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (8, 8, 8), (0e-3, 0e-3, 0e-3)),
     #     ("BowtieCrossDiel_4_3freqs_20dB", "Data_Sim/BowtieCrossDiel_4_20dB.txt", 'bowtie_cross', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (4, 4, 4), (0e-3, 0e-3, 0e-3)),
     #     ("BowtieCrossDiel_5_3freqs_20dB", "Data_Sim/BowtieCrossDiel_5_20dB.txt", 'bowtie_cross', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (5, 5, 5), (0e-3, 0e-3, 0e-3)),
     #     ("BowtieCrossDiel_6_3freqs_20dB", "Data_Sim/BowtieCrossDiel_6_20dB.txt", 'bowtie_cross', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (6, 6, 6), (0e-3, 0e-3, 0e-3)),
-    #     ("BowtieCrossDiel_7_3freqs_20dB", "Data_Sim/BowtieCrossDiel_7_20dB.txt", 'bowtie_cross', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (7, 7, 7), (0e-3, 0e-3, 0e-3))
-    # ]
-
-    # lower SNRs
-    # datasets_to_test = [
+    #     ("BowtieCrossDiel_7_3freqs_20dB", "Data_Sim/BowtieCrossDiel_7_20dB.txt", 'bowtie_cross', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (7, 7, 7), (0e-3, 0e-3, 0e-3)),
+    #     ("BowtieCrossDiel_8_3freqs_20dB", "Data_Sim/BowtieCrossDiel_8_20dB.txt", 'bowtie_cross', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (8, 8, 8), (0e-3, 0e-3, 0e-3)),
     #     ("AustriaDiel_5_3freqs_10dB", "Data_Sim/AustriaDiel_5_10dB.txt", 'Austria', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (5, 5, 5), (0e-3, 0e-3, 0e-3)),
     #     ("AustriaDiel_5_3freqs_0dB", "Data_Sim/AustriaDiel_5_0dB.txt", 'Austria', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (5, 5, 5), (0e-3, 0e-3, 0e-3)),
-    # ]
-
-    datasets_to_test = [
-        ("BowtieCrossDiel_5_3freqs_10dB", "Data_Sim/BowtieCrossDiel_5_10dB.txt", 'bowtie_cross', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (5, 5, 5), (0e-3, 0e-3, 0e-3)),
-        ("BowtieCrossDiel_5_3freqs_0dB", "Data_Sim/BowtieCrossDiel_5_0dB.txt", 'bowtie_cross', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (5, 5, 5), (0e-3, 0e-3, 0e-3))
-    ]
-
-    # Lossy Object Data
-    # datasets_to_test = [
+    #     ("BowtieCrossDiel_5_3freqs_10dB", "Data_Sim/BowtieCrossDiel_5_10dB.txt", 'bowtie_cross', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (5, 5, 5), (0e-3, 0e-3, 0e-3)),
+    #     ("BowtieCrossDiel_5_3freqs_0dB", "Data_Sim/BowtieCrossDiel_5_0dB.txt", 'bowtie_cross', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (5, 5, 5), (0e-3, 0e-3, 0e-3)),
     #     ("AustriaLossy_e6s30_3freqs_20dB", "Data_Sim/AustriaLossy_e6s30_20dB.txt", 'Austria', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (6.0, 6.0, 6.0), (30e-3, 30e-3, 30e-3)),
     #     ("BowtieCrossLossy_RectEpsr6Sig30_TriEpsr3Sig60_3freqs_20dB", "Data_Sim/BowtieCrossLossy_RectEpsr6Sig30_TriEpsr3Sig60_20dB.txt", 'bowtie_cross', 0.5, [0.3, 0.4, 0.5], [[0], [0, 1], [0, 1, 2]], (6.0, 3.0, 3.0), (30e-3, 60e-3, 60e-3)),
     # ]
 
     # --------------------Fresnel Data--------------------
-    # datasets_to_test = [
-    #     ("FoamTwinDielTM_3freqs789", "Fresnel_Data/The_second_opus/FoamTwinDielTM_Format.txt", 'FoamTwinDiel', 0.1, [7, 8, 9], [[0], [0, 1], [0, 1, 2]], (1.45, 3.0, 3.0), (0e-3, 0e-3, 0e-3)),
-    #     ("FoamTwinDielTM_3freqs789", "Fresnel_Data/The_second_opus/FoamTwinDielTM_Format.txt", 'FoamTwinDiel', 0.1, [7, 8, 9], [[0, 1, 2]], (1.45, 3.0, 3.0), (0e-3, 0e-3, 0e-3)),
-    #     ("FoamTwinDielTM_3freqs345", "Fresnel_Data/The_second_opus/FoamTwinDielTM_Format.txt", 'FoamTwinDiel', 0.1, [3, 4, 5], [[0], [0, 1], [0, 1, 2]], (1.45, 3.0, 3.0), (0e-3, 0e-3, 0e-3)),
-    #     ("FoamTwinDielTM_3freqs345", "Fresnel_Data/The_second_opus/FoamTwinDielTM_Format.txt", 'FoamTwinDiel', 0.1, [3, 4, 5], [[0, 1, 2]], (1.45, 3.0, 3.0), (0e-3, 0e-3, 0e-3)),
-    # ]
+    datasets_to_test = [
+        ("FoamTwinDielTM_3freqs8910", "Fresnel_Data/The_second_opus/FoamTwinDielTM_Format.txt", 'FoamTwinDiel', 0.1, [8, 9, 10], [[0], [0, 1], [0, 1, 2]], (1.45, 3.0, 3.0), (0e-3, 0e-3, 0e-3)),
+        ("FoamTwinDielTM_3freqs8910", "Fresnel_Data/The_second_opus/FoamTwinDielTM_Format.txt", 'FoamTwinDiel', 0.1, [8, 9, 10], [[0, 1, 2]], (1.45, 3.0, 3.0), (0e-3, 0e-3, 0e-3)),
+        ("FoamTwinDielTM_3freqs345", "Fresnel_Data/The_second_opus/FoamTwinDielTM_Format.txt", 'FoamTwinDiel', 0.1, [3, 4, 5], [[0], [0, 1], [0, 1, 2]], (1.45, 3.0, 3.0), (0e-3, 0e-3, 0e-3)),
+        ("FoamTwinDielTM_3freqs345", "Fresnel_Data/The_second_opus/FoamTwinDielTM_Format.txt", 'FoamTwinDiel', 0.1, [3, 4, 5], [[0, 1, 2]], (1.45, 3.0, 3.0), (0e-3, 0e-3, 0e-3)),
+        ("FoamTwinDielTM_3freqs789", "Fresnel_Data/The_second_opus/FoamTwinDielTM_Format.txt", 'FoamTwinDiel', 0.1, [7, 8, 9], [[0], [0, 1], [0, 1, 2]], (1.45, 3.0, 3.0), (0e-3, 0e-3, 0e-3)),
+        ("FoamTwinDielTM_3freqs789", "Fresnel_Data/The_second_opus/FoamTwinDielTM_Format.txt", 'FoamTwinDiel', 0.1, [7, 8, 9], [[0, 1, 2]], (1.45, 3.0, 3.0), (0e-3, 0e-3, 0e-3)),
+    ]
 
     for d_name, f_name, SHAPE_TYPE, ROI_RANGE, F_SEL, CONFIG_STAGES, eps_vals, sig_vals in datasets_to_test:
-        # 动态更新全局变量，使其能够被其余代码正确地读取和运行
+        # Dynamically update global variables so that the rest of the code can read them and run correctly.
         DATASET_NAME = d_name
         FILE_NAME = f_name
 
+        # ================= Automatically adapt the number of epochs based on the data type. =================
+        is_fresnel = "Fresnel" in FILE_NAME
+        EPOCHS_CC_CSI  = 50000 if is_fresnel else 75000
+        EPOCHS_PINN    = 50000 if is_fresnel else 75000
+        EPOCHS_CC_PINN = 50000 if is_fresnel else 75000
+        EPOCHS_ES_PINN = 5000  if is_fresnel else 10000
+
         EXT = [-ROI_RANGE, ROI_RANGE, -ROI_RANGE, ROI_RANGE]
 
-        # 分别解包并赋值给 3 个区域的介电常数和电导率
+        # Unpack and assign the permittivity and conductivity for the three regions separately.
         RANGE_EPS_1, RANGE_EPS_2, RANGE_EPS_3 = eps_vals
         RANGE_SIG_1, RANGE_SIG_2, RANGE_SIG_3 = sig_vals
 
         if len(CONFIG_STAGES) == 1:
-            TEST_ROOT_DIR = os.path.join("robustness_test_sim", DATASET_NAME)
+            TEST_ROOT_DIR = os.path.join("robustness_test_Fresnel_sim", DATASET_NAME)
         else:
-            TEST_ROOT_DIR = os.path.join("robustness_test_hop", DATASET_NAME)
+            TEST_ROOT_DIR = os.path.join("robustness_test_Fresnel_hop", DATASET_NAME)
 
         print(f"\n======================================================================")
         print(f"Starting experiments for dataset: {DATASET_NAME}")
@@ -1153,7 +1467,7 @@ if __name__ == "__main__":
 
         os.makedirs(TEST_ROOT_DIR, exist_ok=True)
 
-        # ---------------- 绘制并保存真实值参考图像 ----------------
+        # ---------------- Plot and save the ground-truth reference image. ----------------
         dx = dy = (2 * ROI_RANGE) / GRID_SIZE
         X_mat, Y_mat = np.meshgrid(np.linspace(-ROI_RANGE + dx / 2, ROI_RANGE - dx / 2, GRID_SIZE),
                                    np.linspace(-ROI_RANGE + dy / 2, ROI_RANGE - dy / 2, GRID_SIZE), indexing='ij')
@@ -1168,6 +1482,7 @@ if __name__ == "__main__":
         print(f"Ground truth plots have been successfully saved to '{TEST_ROOT_DIR}'.")
 
 
+        # Smart check helper function: if the test is already satisfied, plot directly and skip the computation process.
         def check_and_run(alg_dir, run_func, *args, **kwargs):
             os.makedirs(alg_dir, exist_ok=True)
             metrics_path = os.path.join(alg_dir, "metrics.npz")
@@ -1186,7 +1501,7 @@ if __name__ == "__main__":
 
         print("\n--- 1. Executing CC-CSI (Deterministic, 1 Run) ---")
         cccsi_dir = os.path.join(TEST_ROOT_DIR, "CC-CSI", "run01")
-        check_and_run(cccsi_dir, run_cc_csi)
+        check_and_run(cccsi_dir, run_cc_csi, total_epochs=EPOCHS_CC_CSI)
 
         for run_idx in range(1, NUM_RUNS + 1):
             run_str = f"run{run_idx:02d}"
@@ -1194,7 +1509,7 @@ if __name__ == "__main__":
 
             print(f"\n=== Starting Robustness Iteration {run_idx}/{NUM_RUNS} (Seed: {seed}) ===")
 
-            # 强制更新各类随机数生成器以测试网络初始化的鲁棒性
+            # Force-update various random number generators to test the robustness of network initialization.
             np.random.seed(seed)
             torch.manual_seed(seed)
             if torch.cuda.is_available():
@@ -1203,17 +1518,17 @@ if __name__ == "__main__":
             # 1. PINN (Data + State)
             print(f" -> Executing PINN [Data+State] ({run_str})...")
             pinn_dir = os.path.join(TEST_ROOT_DIR, "data+state-PINN", run_str)
-            check_and_run(pinn_dir, run_cc_pinn_variant, classic_mode=True)
+            check_and_run(pinn_dir, run_cc_pinn_variant, classic_mode=True, total_epochs=EPOCHS_PINN)
 
             # 2. CC-PINN (Data + State + Cross)
             print(f" -> Executing CC-PINN ({run_str})...")
             ccpinn_dir = os.path.join(TEST_ROOT_DIR, "CC-PINN", run_str)
-            check_and_run(ccpinn_dir, run_cc_pinn_variant, classic_mode=False)
+            check_and_run(ccpinn_dir, run_cc_pinn_variant, classic_mode=False, total_epochs=EPOCHS_CC_PINN)
 
             # 3. ES-PINN
             print(f" -> Executing ES-PINN ({run_str})...")
             es_dir = os.path.join(TEST_ROOT_DIR, "ES-PINN", run_str)
-            check_and_run(es_dir, run_es_pinn)
+            check_and_run(es_dir, run_es_pinn, total_epochs=EPOCHS_ES_PINN)
 
             # # 4. CC-CSI
             # print(f" -> Executing CC-CSI ({run_str})...")
