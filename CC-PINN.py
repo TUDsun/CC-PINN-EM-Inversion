@@ -556,8 +556,12 @@ def run_cc_pinn_variant(run_dir, classic_mode=False, total_epochs=75000):
                 total_loss = torch.sum(norm_weights_batched * (loss_Data + loss_State + beta_cross * loss_Cross))
 
             total_loss.backward()
-            torch.nn.utils.clip_grad_norm_(net_eps.parameters(), 1.0)
-            torch.nn.utils.clip_grad_norm_(W_params.parameters(), 1.0)
+            # ---------------------------------------------------------
+            # 统一梯度防爆阈值（兼顾强散射仿真与弱散射实测数据）
+            # ---------------------------------------------------------
+            torch.nn.utils.clip_grad_norm_(net_eps.parameters(), max_norm=2.0)
+            torch.nn.utils.clip_grad_norm_(W_params.parameters(), max_norm=15.0)
+          
             optimizer.step()
             scheduler.step()
 
