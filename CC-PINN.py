@@ -559,8 +559,8 @@ def run_cc_pinn_variant(run_dir, classic_mode=False, total_epochs=75000):
             # ---------------------------------------------------------
             # 统一梯度防爆阈值（兼顾强散射仿真与弱散射实测数据）
             # ---------------------------------------------------------
-            torch.nn.utils.clip_grad_norm_(net_eps.parameters(), max_norm=25.0)
-            torch.nn.utils.clip_grad_norm_(W_params.parameters(), max_norm=100.0)
+            # torch.nn.utils.clip_grad_norm_(net_eps.parameters(), max_norm=25.0)
+            # torch.nn.utils.clip_grad_norm_(W_params.parameters(), max_norm=100.0)
           
             optimizer.step()
             scheduler.step()
