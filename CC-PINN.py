@@ -563,15 +563,10 @@ def run_cc_pinn_variant(run_dir, classic_mode=False, total_epochs=75000):
             # ---------------------------------------------------------
             # 统一梯度防爆阈值（兼顾强散射仿真与弱散射实测数据）
             # ---------------------------------------------------------
-            clip_threshold = 1.0 if "Fresnel" in FILE_NAME else 1000.0
+            clip_threshold = 1.0 if "Fresnel" in FILE_NAME else 100.0
 
-            # norm_net = torch.nn.utils.clip_grad_norm_(net_eps.parameters(), clip_threshold)
+            norm_net = torch.nn.utils.clip_grad_norm_(net_eps.parameters(), clip_threshold)
             # norm_w = torch.nn.utils.clip_grad_norm_(W_params.parameters(), clip_threshold)
-
-            norm_netw = torch.nn.utils.clip_grad_norm_(
-                list(net_eps.parameters()) + list(W_params.parameters()), 
-                max_norm=clip_threshold
-            )
           
             optimizer.step()
             scheduler.step()
