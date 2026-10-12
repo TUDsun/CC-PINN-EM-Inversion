@@ -455,8 +455,8 @@ def run_cc_pinn_variant(run_dir, classic_mode=False, total_epochs=75000):
     TOTAL_EPOCHS = total_epochs
 
     WW_NUM, ALPHA_VALUE = 0, 10
-    LR_NET_BASE, LR_W_BASE = (1e-3, 2e-3) if "Fresnel" in FILE_NAME else (1e-4, 2e-4)
-    ETA_NET_MIN, ETA_W_MIN = (1e-4, 1e-4) if "Fresnel" in FILE_NAME else (1e-5, 1e-5)
+    LR_NET_BASE, LR_W_BASE = (1e-3, 2e-3) if "Fresnel" in FILE_NAME else (1e-4, 1e-4)
+    ETA_NET_MIN, ETA_W_MIN = (1e-4, 1e-4) if "Fresnel" in FILE_NAME else (1e-4, 1e-4)
     WARMUP_STEPS = 500
 
     dataset, r_grid = load_data_cc(FILE_NAME)
