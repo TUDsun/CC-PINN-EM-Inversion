@@ -654,7 +654,7 @@ def run_es_pinn(run_dir, total_epochs=10000):
                 total_loss += torch.mean(freq_loss) / data['norm_D']
 
             (total_loss / len(active_freqs)).backward()
-            # torch.nn.utils.clip_grad_norm_(net_eps.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(net_eps.parameters(), 1.0)
             optimizer.step()
             scheduler.step()
 
