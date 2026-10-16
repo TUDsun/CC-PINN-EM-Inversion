@@ -552,12 +552,12 @@ def run_cc_pinn_variant(run_dir, classic_mode=False, total_epochs=75000):
                                                                                        Gs_batched.shape[2])
                 loss_Cross = torch.mean(torch.abs(Es_cross_pred - Es_meas_batched) ** 2,
                                         dim=(1, 2)) / norm_D_batched.squeeze()
-
+                scale_cross = (loss_State.detach() / (loss_Cross.detach() + 1e-8)).clamp(max=1.0)
                 if stage == 0:
                     beta_cross = np.exp(-ALPHA_VALUE * (epoch / min(stage_epochs_list[0], TOTAL_EPOCHS * 0.2)))
                 else:
                     beta_cross = 0.0
-                total_loss = torch.sum(norm_weights_batched * (loss_Data + loss_State + beta_cross * loss_Cross))
+                total_loss = torch.sum(norm_weights_batched * (loss_Data + loss_State + beta_cross * scale_cross * loss_Cross))
 
             total_loss.backward()
             # ---------------------------------------------------------
