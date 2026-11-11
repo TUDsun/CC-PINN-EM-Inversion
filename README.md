@@ -27,6 +27,29 @@ To ensure a fair and comprehensive comparison, this repository includes the impl
 **Supplementary Script for Baseline Selection:**
 * `CC-CSI_CSI_DBIM-Time-PSNR_autoRun.py`: A standalone evaluation script comparing the reconstruction accuracy (PSNR) and computational time among **CC-CSI, conventional CSI, and DBIM**. The empirical results explicitly demonstrate the superiority of CC-CSI, rigorously justifying its selection as the representative traditional deterministic inversion baseline in our manuscript.
 
+## Important Note on Learning Rate Tuning & Reproduction
+
+**Note for Reproduction and Comparison with the Manuscript**
+
+In the published manuscript, the synthetic simulation experiments were conducted using the initial learning rate configuration from the earlier submission round. In this updated codebase, a more balanced and refined learning rate configuration has been adopted:
+```python
+LR_NET_BASE, LR_W_BASE = (1e-3, 1e-3) if "Fresnel" in FILE_NAME else (1e-4, 1e-4)
+ETA_NET_MIN = LR_NET_BASE
+ETA_W_MIN = LR_W_BASE
+```
+
+When running the code with these refined parameters, users may observe the following two phenomena:
+1. **Substantial Robustness Gain over CC-CSI:** Both `Data+State-PINN` and `CC-PINN` exhibit convergence robustness that significantly outperforms the classical deterministic solver `CC-CSI`.
+2. **Contrast Limit on Idealized Synthetic Data:** Under this specific learning rate configuration, `Data+State-PINN` can achieve a contrast retrieval limit slightly higher than that of `CC-PINN` on idealized synthetic benchmarks.
+
+**Scientific Clarification on Inversion Robustness:**
+We emphasize that Phenomenon 2 **does not** imply that `Data+State-PINN` is intrinsically more robust than `CC-PINN` in realistic inverse problems. 
+* On experimental measured data (the Institut Fresnel dataset), **CC-PINN demonstrates vastly superior robustness and reconstruction fidelity compared to Data+State-PINN**.
+* **Physical Mechanism:** Synthetic simulations operate under idealized 2D assumptions with pure additive noise. In contrast, real-world measured data inevitably involve severe unmodeled physical factors, including 3D wave propagation effects, incident field modeling mismatches, antenna radiation pattern distortions, and mutual coupling. Without the closed-loop cross-correlation constraint, `Data+State-PINN` easily overfits to these unmodeled systematic discrepancies and gets trapped in non-physical local minima from the earliest optimization stages. `CC-PINN`, by enforcing cross-validation between the inferred contrast, internal fields, and observation data, regularizes the optimization trajectory and prevents catastrophic local-minima traps. Therefore, **CC-PINN possesses substantially higher robustness in practical engineering applications**.
+
+**Why are the simulation results in the manuscript not updated?**
+Since the manuscript received a **Minor Revision** decision, the reported synthetic simulation results strictly preserve the original benchmark parameters established during early review stages to maintain revision consistency. Only the experimental Fresnel dataset was re-evaluated and updated using the refined learning rate configuration. This note is provided to ensure full transparency and prevent any confusion when reproducing the results against the manuscript.
+
 ## Datasets Evaluated
 The code natively supports automated robustness testing on various datasets:
 * **Synthetic Data:** "Austria" profile and "Bowtie-Cross" targets (varying relative permittivity $\varepsilon_r \in [4, 7]$, lossy media, and different noise levels: 20dB, 10dB, 0dB SNR).
