@@ -39,7 +39,7 @@ ETA_W_MIN = LR_W_BASE
 ```
 
 When running the code with these refined parameters, users may observe the following two phenomena:
-1. **Substantial Robustness Gain over CC-CSI:** Both `Data+State-PINN` and `CC-PINN` exhibit convergence robustness that significantly outperforms the classical deterministic solver `CC-CSI`.
+1. **Substantial Robustness Gain over CC-CSI:** Both `Data+State-PINN` and `CC-PINN` exhibit convergence robustness that significantly outperforms the classical deterministic solver `CC-CSI` (for example $\varepsilon_r > 9$).
 2. **Contrast Limit on Idealized Synthetic Data:** Under this specific learning rate configuration, `Data+State-PINN` can achieve a contrast retrieval limit slightly higher than that of `CC-PINN` on idealized synthetic benchmarks.
 
 **Scientific Clarification on Inversion Robustness:**
